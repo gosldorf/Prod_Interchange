@@ -1,0 +1,27 @@
+name: openff
+channels:
+  - conda-forge
+  - anaconda
+  - plotly
+dependencies:
+  - python=3.10
+  - pip
+  - openmm
+  - openff-toolkit
+  - openff-units
+  - openmmforcefields
+  - nglview
+  - pandas
+  - plotly
+  - ipykernel
+  - scipy
+  - parmed
+  - mdtraj
+  - pyqt
+  - pymol-open-source
+  - rdkit
+  - pdbfixer
+  - openbabel
+  - ambertools
+  - jupyterthemes
+  - mols2grid
