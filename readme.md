@@ -23,3 +23,7 @@ Within this subdirectory are sbatch script examples for running simulations on a
 4. Examples
 
 Within this subdirectory are a number of subdirectories within each are examples for running a variety of use-cases for this codebase
+
+5. Sys_Prep
+
+Within this subdirectory will be an example jupyter notebook within which we demonstrate preparing our pdbFile and sdfFile from the pdb directly downloaded from the rcsb database
