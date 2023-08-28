@@ -27,3 +27,10 @@ Within this subdirectory are a number of subdirectories within each are examples
 5. Sys_Prep
 
 Within this subdirectory will be an example jupyter notebook within which we demonstrate preparing our pdbFile and sdfFile from the pdb directly downloaded from the rcsb database
+
+
+### TODO
+
+- Improve optimization
+
+- Improve error message logging
