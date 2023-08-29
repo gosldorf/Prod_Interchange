@@ -24,6 +24,7 @@ from openff.toolkit import ForceField, Molecule, Topology
 platform = openmm.Platform.getPlatformByName('CUDA')
 properties={}
 properties["DeviceIndex"]="0"
+properties["Precision"]="mixed"
 ########################Platform Block########################
 
 ########################Global Functions########################
