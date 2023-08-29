@@ -97,7 +97,7 @@ def insert_molecule_and_remove_clashes(
 # Function to add backbone position restraints
 def add_posres(system, positions, atoms, restraint_force, res_context, atom_list = None):
     '''
-    modified functiont to apply position restraints to openmm system
+    modified function to apply position restraints to openmm system
      restraints will be periodic distance forces applied with customized strengths
      on targeted atoms
      
@@ -106,14 +106,13 @@ def add_posres(system, positions, atoms, restraint_force, res_context, atom_list
     atoms = openmm atoms, might need modeller atoms
     restraint_force = desired force strength in (kcal/mol/Å)^2
     res_context = option to define restraints definition desired
-        None = no restraints
         'AHR' = all heavy atoms
         'BBR' = backbone heavy atoms (CA, C, N)
         '3DS' = 3 distal sites (CA atoms)
     atom_list = list of atoms to apply restraints to (for custom defintions)
         required for '3DS'
         This list needs to be a list of strings so ['1','4'] for the first and fourth atom,
-            start the count from 1 modeller resets i think
+            start the count from 1 for modeller 
     '''
     #define list of protein residues to ensure we do not restrain other residues here (water/ligand)
     protein_residues = ['ACE','NME','NMA','ALA',
@@ -160,13 +159,7 @@ def add_ligposres(system, positions, atoms, restraint_force, res_context, atom_l
     atoms = openmm atoms, might need modeller atoms
     restraint_force = desired force strength in (kcal/mol/Å)^2
     res_context = option to define restraints definition desired
-        None = no restraints
         'AHR' = all heavy atoms
-        'BBR' = backbone heavy atoms (CA, C, N)
-        '3DS' = 3 distal sites (CA atoms)
-    atom_list = list of atoms to apply restraints to (for custom defintions)
-        required for '3DS'
-        This list needs to be a list of strings so ['1','4'] for the first and fourth atom, start the count from 1 modeller resets i think
     '''
     #define list of protein residues to ensure we do not restrain other residues here (water/ligand)
     water_residues = ['WAT','HOH','T3P','TP3','SPC']
