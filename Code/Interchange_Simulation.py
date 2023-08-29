@@ -326,7 +326,7 @@ class simSystem():
         padding: The distance from the edge of the atoms in the pdbFile to edge of the box (nM)
         
         ionicStrength: desired ionic strength (M), this will also neutralize charge. If 0, will not add ions.
-            Highly recommend adding ions to neutralize charge in systems containig proteins. 
+            Highly recommend adding ions to neutralize charge in systems containing proteins. 
                 Industry standard is for around 0.15 Molar, hence default.
             Not recommended in Just ligand systems.
         '''
