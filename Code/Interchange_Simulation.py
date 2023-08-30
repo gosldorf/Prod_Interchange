@@ -640,7 +640,7 @@ class simSystem():
         openmm.app.PDBFile.writeFile(simulation.topology, positions, open('equilibrated.pdb', 'w'))
         
     def prodSimulation(self, temperature=300, mdsteps=50000000, frictCoeff=1, stepSize=0.002,
-                      nc_reporter='prod.nc',state_reporter='prod.csv',saveFreq=500):
+                      nc_reporter='prod.nc',state_reporter='prod.csv',saveFreq=5000, simSaveFreq=500):
         '''
         Method for running production simulations in NVT systems
         
@@ -650,7 +650,8 @@ class simSystem():
         stepSize: simulation step size, default 0.002 (ps)
         nc_reporter: trajectory file output, default 'prod.nc'
         state_reporter: trajectory log output, default 'prod.csv'
-        saveFreq: frequency to write to the log/trajectory, default 500 (every 1 ps)
+        saveFreq: frequency to write to the log, default 5000 (every 10 ps)
+        simSaveFreq: frequency to write to the trajectory output file, default 500 (1 ps)
         '''
         integrator = openmm.LangevinIntegrator(
             temperature * openmm_unit.kelvin,
@@ -665,7 +666,7 @@ class simSystem():
             simulation.system.getForce(4).setFrequency(0)
         else:
             simulation.system.getForce(5).setFrequency(0)
-        nc_reporter = pmd.openmm.NetCDFReporter(nc_reporter, saveFreq)
+        nc_reporter = pmd.openmm.NetCDFReporter(nc_reporter, simSaveFreq)
         simulation.reporters.append(openmm.app.StateDataReporter(state_reporter, saveFreq, step=True,
                                    potentialEnergy=True,kineticEnergy=True,totalEnergy=True,
                                    temperature=True,volume=True,density=True,
