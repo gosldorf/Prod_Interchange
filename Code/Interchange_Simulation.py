@@ -402,6 +402,8 @@ class simSystem():
             self.log.write(f"parameterizing system with {listofForcefields[0]}, {listofForcefields[1]}, {listofForcefields[2]}\n")
             sage = ForceField(listofForcefields[0], listofForcefields[1], listofForcefields[2])
         interchange = sage.create_interchange(self.solvatedTop)
+        interchange.to_prmtop("system.prmtop") ##problem with saving when P-L for some reason, nonetheless we should create these
+        interchange.to_inpcrd("system.rst7")
         self.omm_system = interchange.to_openmm()
         self.omm_top = interchange.to_openmm_topology()
         return 0
