@@ -16,6 +16,7 @@ from openff.units import Quantity, unit
 from openmm import unit as openmm_unit
 #openff toolkit imports
 from openff.toolkit import ForceField, Molecule, Topology
+from openff.interchange import Interchange
 ########################Import Block########################
 
 ########################Platform Block########################
@@ -401,7 +402,8 @@ class simSystem():
         else:
             self.log.write(f"parameterizing system with {listofForcefields[0]}, {listofForcefields[1]}, {listofForcefields[2]}\n")
             sage = ForceField(listofForcefields[0], listofForcefields[1], listofForcefields[2])
-        interchange = sage.create_interchange(self.solvatedTop)
+        # interchange = sage.create_interchange(self.solvatedTop)
+        interchange = Interchange.from_smirnoff(force_field=sage, topology=self.solvatedTop)
         interchange.to_prmtop("system.prmtop") ##problem with saving when P-L for some reason, nonetheless we should create these
         interchange.to_inpcrd("system.rst7")
         self.omm_system = interchange.to_openmm()

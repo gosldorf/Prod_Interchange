@@ -1,4 +1,4 @@
-name: openff
+name: openff_interchange
 channels:
   - conda-forge
   - anaconda
@@ -9,7 +9,7 @@ dependencies:
   - openmm
   - openff-toolkit
   - openff-units
-  - openmmforcefields
+  - openff-interchange
   - nglview
   - pandas
   - plotly
