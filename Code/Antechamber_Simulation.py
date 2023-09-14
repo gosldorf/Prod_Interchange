@@ -829,7 +829,7 @@ class simSystem():
         openmm.app.PDBFile.writeFile(simulation.topology, positions, open('equilibrated.pdb', 'w'))
         
     def prodSimulation(self, temperature=300, mdsteps=50000000, frictCoeff=1, stepSize=0.002,
-                      nc_reporter='prod.nc',state_reporter='prod.csv',saveFreq=5000, simSaveFreq=500):
+                      nc_reporter='prod.dcd',state_reporter='prod.csv',saveFreq=5000, simSaveFreq=500):
         '''
         Method for running production simulations in NVT systems
         
@@ -852,10 +852,11 @@ class simSystem():
                                            integrator,platform,properties)
         simulation.context.setState(self.equilState)
         if self.restraintType == None:
-            simulation.system.getForce(4).setFrequency(0)
-        else:
             simulation.system.getForce(5).setFrequency(0)
-        nc_reporter = pmd.openmm.NetCDFReporter(nc_reporter, simSaveFreq)
+        else:
+            simulation.system.getForce(6).setFrequency(0)
+        #nc_reporter = pmd.openmm.NetCDFReporter(nc_reporter, simSaveFreq)
+        nc_reporter = openmm.app.DCDReporter(nc_reporter, simSaveFreq)
         simulation.reporters.append(openmm.app.StateDataReporter(state_reporter, saveFreq, step=True,
                                    potentialEnergy=True,kineticEnergy=True,totalEnergy=True,
                                    temperature=True,volume=True,density=True,
