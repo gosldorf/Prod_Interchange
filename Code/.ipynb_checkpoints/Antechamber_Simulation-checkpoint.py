@@ -4,8 +4,8 @@ import numpy as np
 from io import StringIO
 from typing import Iterable
 from copy import deepcopy
-import argparse
 from pathlib import Path
+import os
 #comp chem imports
 import mdtraj
 from pdbfixer import PDBFixer
@@ -32,68 +32,6 @@ properties["Precision"]="mixed"
 global_log = 'log_global.txt' #initialize logfile
 glog = open(global_log, 'w')
 
-## method stolen from openff toolkit example
-def insert_molecule_and_remove_clashes(
-    topology: Topology,
-    insert: Molecule,
-    radius: Quantity = 1.5 * unit.angstrom, #defines clash removal radius
-    keep: Iterable[Molecule] = [],
-) -> Topology:
-    """
-    Add a molecule to a copy of the topology, removing any clashing molecules.
-
-    The molecule will be added to the end of the topology. A new topology is
-    returned; the input topology will not be altered. All molecules that
-    clash will be removed, and each removed molecule will be printed to stdout.
-    Users are responsible for ensuring that no important molecules have been
-    removed; the clash radius may be modified accordingly.
-
-    Parameters
-    ==========
-    top
-        The topology to insert a molecule into
-    insert
-        The molecule to insert
-    radius
-        Any atom within this distance of any atom in the insert is considered
-        clashing.
-    keep
-        Keep copies of these molecules, even if they're clashing
-    """
-    # We'll collect the molecules for the output topology into a list
-    new_top_mols = []
-    # A molecule's positions in a topology are stored as its zeroth conformer
-    insert_coordinates = insert.conformers[0][:, None, :]
-    for molecule in topology.molecules:
-        if any(keep_mol.is_isomorphic_with(molecule) for keep_mol in keep):
-            new_top_mols.append(molecule)
-            continue
-        molecule_coordinates = molecule.conformers[0][None, :, :]
-        diff_matrix = molecule_coordinates - insert_coordinates
-
-        # np.linalg.norm doesn't work on Pint quantities 😢
-        working_unit = unit.nanometer
-        distance_matrix = (
-            np.linalg.norm(diff_matrix.m_as(working_unit), axis=-1) * working_unit
-        )
-
-        if distance_matrix.min() > radius:
-            # This molecule is not clashing, so add it to the topology
-            new_top_mols.append(molecule)
-        else:
-            glog.write(f"Removed {molecule.to_smiles()} molecule")
-
-    # Insert the ligand at the end
-    new_top_mols.append(insert)
-
-    # This pattern of assembling a topology from a list of molecules
-    # ends up being much more efficient than adding each molecule
-    # to a new topology one at a time
-    new_top = Topology.from_molecules(new_top_mols)
-
-    # Don't forget the box vectors!
-    new_top.box_vectors = topology.box_vectors
-    return new_top
 
 # Function to add backbone position restraints
 def add_posres(system, positions, atoms, restraint_force, res_context, atom_list = None):
@@ -212,8 +150,11 @@ class simSystem():
     '''
     pdbFile = None
     sysType = "P-L"
-    sdfFile = None
+    ligFile = None
     restraintType = None
+    ligFF = None
+    proFF = None
+    watFF = None
     ligand = None #storage for Molecule object
     solvatedTop = None #storage for after we build solvation system
     omm_top = None #storage for openmm topology object created after interchange parameterization
@@ -230,14 +171,23 @@ class simSystem():
     totalmdsteps = 0 #storage for total mdsteps
     logfile = 'log_interchange_openmm.txt'
     log = open(logfile, 'w')
-    def __init__(self,pdbFile,sysType="P-L",sdfFile=None,
-                 restraintType=None,restart=False):
+    def __init__(self,pdbFile,sysType="P-L",ligFile=None, sdfFile=None,
+                 restraintType=None,restart=False, proFF = 'protein.ff19SB', ligFF = 'gaff2', watFF = 'water.opc', ions=0.15):
         '''
             init method, sets values fed by user in arguments into class variables, outputs error if necessary
         '''
         self.pdbFile = pdbFile
         self.sysType = sysType
+        self.ligFile = ligFile
+        self.sdfFile = sdfFile
+        self.ligand = Molecule.from_file(self.sdfFile)
+        self.proFF = proFF
+        self.ligFF = ligFF
+        self.watFF = watFF
         self.restraintType = restraintType
+        self.ions = ions ##desired ion M, 0 for counter ions only, None for no ions whatsoever
+        self.prmtop = None
+        self.inpcrd = None
         if self.sysType not in ['P-L', 'Apo', 'Lig']:
             self.log.write("Error: Provided system type is not in the list of available options.\n")
             self.log.write("Please use one of: 'P-L', 'Apo', 'Lig'\n")
@@ -246,11 +196,27 @@ class simSystem():
             self.log.write("Error: provided restraintType is not supported\n")
             self.log.write("Use either None (not string) or ['AHR', 'BBR', '3DS']\n")
             return 1
-        self.sdfFile = sdfFile
         if self.sysType in ['P-L','Lig'] and self.sdfFile == None:
             self.log.write("Error: Selected system type contains a ligand, but no ligand sdf file provided\n")
             self.log.write("Please define ligand sdf file\n")
             return 1
+        elif self.sysType in ['P-L','Lig'] and self.ligFile == None:
+            self.log.write("Error: Selected system type contains a ligand, but no ligand pdb file provided\n")
+            self.log.write("Please define ligand pdb file\n")
+            return 1
+        else: #provided ligand and sdf
+            pathcheck2 = Path(sdfFile)
+            pathcheck3 = Path(ligFile)
+            if not pathcheck2.is_file():
+                self.log.write("Error: Unable to read provided sdffile\n")
+                self.log.write("Check that path is correct\n")
+                self.log.write(f"{pathcheck2}\n")
+                return 1
+            if not pathcheck3.is_file():
+                self.log.write("Error: Unable to read provided ligfile\n")
+                self.log.write("Check that path is correct\n")
+                self.log.write(f"{pathcheck3}\n")
+                return 1
         ##check that provided files exist and are reachable
         pathcheck1 = Path(pdbFile)
         if not pathcheck1.is_file():
@@ -258,15 +224,9 @@ class simSystem():
             self.log.write("Check that path is correct\n")
             self.log.write(f"{pathcheck1}\n")
             return 1
-        if self.sdfFile is not None: #dont need to check if we aren't using one
-            pathcheck2 = Path(sdfFile)
-            if not pathcheck2.is_file():
-                self.log.write("Error: Unable to read provided sdffile\n")
-                self.log.write("Check that path is correct\n")
-                self.log.write(f"{pathcheck2}\n")
-                return 1
-            self.ligand = Molecule.from_file(sdfFile) #initialize Molecule object
         ##made it this far, then everything initialized properly. Output status to command line
+        ##TODO: edit restart lines
+        '''
         if restart:
             if self.sysType=='P-L':
                 listofForcefields=["openff-2.0.0.offxml",
@@ -315,100 +275,323 @@ class simSystem():
             self.log.write(f"sysType: {self.sysType}\n")
             self.log.write(f"restraintType: {self.restraintType}\n")
             self.log.write("Ready to continue protocol!\n")
+            '''
         return 
         
-    
-    def solvateSystem(self, padding=1.0, ionicStrength=0.15):
+
+    def antechamberLigand(self, ligcharge=0):
         '''
-        Method that calls pdbfixer so as to solvate the box around the provided pdbFile
-        Creating a solvated simulation system requires a few parameters
-            in this case pdbfixer is creating a rectangular box by default
-        
-        padding: The distance from the edge of the atoms in the pdbFile to edge of the box (nM)
-        
-        ionicStrength: desired ionic strength (M), this will also neutralize charge. If 0, will not add ions.
-            Highly recommend adding ions to neutralize charge in systems containing proteins. 
-                Industry standard is for around 0.15 Molar, hence default.
-            Not recommended in Just ligand systems.
+        Method parameterizes ligand using standard antechamber/sqm methodology outlined in Amber Tutorials
+        user has already specified ligand input (ligFile)
+
+        ligcharge: charge of ligand to be fed to antechamber -nc flag, default is 0. antechamber struggles with abs(>2) charge
         '''
-        fixer = PDBFixer(self.pdbFile)
-        if ionicStrength == 0: #user indicated no ions, will not add
-            fixer.addSolvent(
-                padding=padding * openmm_unit.nanometer
-            )
-        else: #user indicated ions, will add
-            fixer.addSolvent(
-                padding=padding * openmm_unit.nanometer, ionicStrength = ionicStrength * openmm_unit.molar
-            )
-        with open("solvatedSystem.pdb", "w") as f: #save intermediate pdb file, user should check this
-            openmm.app.PDBFile.writeFile(fixer.topology, fixer.positions, f)
-        if self.sysType == "Lig":
-            self.ligand = Molecule.from_file(self.sdfFile)
-            self.solvatedTop = Topology.from_pdb("solvatedSystem.pdb",
-                                                 unique_molecules=[self.ligand])
-        else:
-            self.solvatedTop = Topology.from_pdb("solvatedSystem.pdb")
-        with open("topology.pdb", "w") as f: #placeholder for apo/ligand situations, should be replaced by embedMolecule in P-L systems
-            print(self.solvatedTop.to_file(file=f))
-        return 0
-    
-    def embedMolecule(self):
-        '''
-        Method that calls 'insert_molecule_and_remove_clashes'
-        Will not be needed unless running a P-L system.
-        Method assumes user ran solvate system first
-        '''
-        pathcheck3 = Path('solvatedSystem.pdb') #check previous step intermediate is reachable, error if not
-        if not pathcheck3.is_file():
-            self.log.write("Error! User initiated embedMolecule method without producing solvatedSystem first\n")
-            self.log.write("Method requires a solvated system to embed into\n")
-            self.log.write("Please run solvateSystem or ensure 'solvatedSystem.pdb' is reachable\n")
+        if self.sysType == 'Apo':
+            self.log.write('Error: user selected to parameterize a ligand, but to run without a ligand\n')
+            self.log.write('Would recommend syncing the run context options\n')
             return 1
-        if self.sysType == "P-L":
-            self.solvatedTop = insert_molecule_and_remove_clashes(self.solvatedTop, self.ligand)
-        with open("topology.json", "w") as f:
-            print(self.solvatedTop.to_json(), file=f)
-        with open("topology.pdb", "w") as f:
-            print(self.solvatedTop.to_file(file=f))
-        return 0
-    
-    def createInterchange(self, listofForcefields=[
-        "openff-2.0.0.offxml",
-        "ff14sb_off_impropers_0.0.3.offxml",
-        "opc3-1.0.0.offxml"
-    ]):
+        os.system(f'antechamber -i {self.ligFile} -fi pdb -o ligand.mol2 -fo mol2 -c bcc -nc {ligcharge} -rn LIG -at gaff2')
+        sqmpath = Path('sqm.pdb')
+        if not sqmpath.is_file():
+            self.log.write('sqm did not successfully calculate charges for ligand\n')
+            self.log.write('check logs and inputs\n')
+            return 1
+        os.system('rm -rf ANTE*') #remove temp files
+        os.system('rm -rf ATOMTYPE.INF')
+        os.system('parmchk2 -i ligand.mol2 -f mol2 -o LIG.frcmod -s gaff2 -a Y')
+        #write our tleap input file from our python script
+        with open('tleap1.in','w') as file:
+            l1 = f"source leaprc.{self.ligFF}\n"
+            l2 = "loadamberparams LIG.frcmod\n" 
+            l3 = "ligand = loadmol2 ligand.mol2\n" 
+            l4 = "saveoff ligand LIG.lib\n"
+            l5 = "saveamberparm ligand ligand_vac.prmtop ligand_vac.rst7\n"
+            l6 = "quit"
+            file.writelines([l1, l2, l3, l4, l5, l6])
+        os.system("tleap -f tleap1.in") #run tleap from our python script
+        self.log.write('created ligand in vacuum prmtop successfully\n')
+        return
+        
+
+    def createSolvatedLigand(self, padding=20): ##padding in Å
         '''
-        Method that takes the embedded or solvated system depending on sysType
-            and creates an interchange object with it
-        listofForcefields: list of openff offxml files to use when building interchange object
-            by default using openff-2.0, ff14sb, and opc3 models
-            user can provide own list
+        Method to use parameters generated in antechamberLigand to generate a solvated prmtop of the ligand
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 20 Å because ligands are small, 15 is good too.
+        '''
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        with open('tleap2.in','w') as file:
+            l1 = f"source leaprc.{self.ligFF}\n"
+            l2 = f"source leaprc.{self.watFF}\n"
+            l3 = "loadamberparams LIG.frcmod\n" 
+            l4 = "loadoff LIG.lib\n"
+            l5 = "ligand = loadmol2 ligand.mol2\n"
+            l6 = f"solvatebox ligand {boxstring} {padding}\n"
+            l7 = "saveamberparm ligand ligand_wat.prmtop ligand_wat.rst7\n"
+            l8 = "quit"
+            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8])
+        os.system('tleap -f tleap2.in')
+        self.log.write('created ligand in solvent prmtop successfully\n')
+        return
+
+    def createSolvatedProtein(self, padding=10): ##padding in Å
+        '''
+        Method to generate a standard protein in water prmtop with tleap using the provided protein file
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
+        '''
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
+        with open('tleap3.in','w') as file:
+            l1 = f"source leaprc.{self.proFF}\n"
+            l2 = f"source leaprc.{self.watFF}\n"
+            l3 = f"protein = loadpdb {self.pdbFile}\n" ##needed since we include xtal waters
+            l4 = f"solvatebox protein {boxstring} {padding}\n"
+            l5 = "saveamberparm protein protein_wat.prmtop protein_wat.rst7\n"
+            l6 = "quit"
+            file.writelines([l1, l2, l3, l4, l5, l6])
+        os.system("tleap -f tleap3.in") #run tleap from our python script
+        self.log.write('created protein in solvent prmtop successfully\n')
+        return
+
+    def createIonsProtein(self, padding=10, targetM = 0.15):
+        '''
+        Method to generate a standard protein in water with counter ions (added to desired molarity)
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
+        targetM: target ion molarity (M), default 0.15, but if set to 0 will only add counter ions to neutralize charge of system 
+        '''
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        ### first use leap.log from solvation of protein to determine system charge
+        charge = 0
+        with open('leap.log', 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                if 'The unperturbed charge of the unit' in line:
+                    print(line)
+                    splits = line.rsplit()
+                    charge = int(float(splits[6][1:-1]))
+                    print(int(float(splits[6][1:-1])))
+        if charge == 0:
+            context = 'uncharged'
+        elif charge < 0:
+            context = 'negative'
+        elif charge > 0:
+            context = 'positive'
+        ### calculate number of ions to add to the system to achieve desired targetM
+        with open('protein_wat.rst7', 'r') as f:
+            last_line = f.readlines()[-1]
+        raw = last_line.rsplit()
+        protein_wat_boxcoord = []
+        for i in range(3):
+            protein_wat_boxcoord.append(float(raw[i]))
+        print(f'coordinates of box: {protein_wat_boxcoord}')
+        protein_wat_boxvol = protein_wat_boxcoord[0]*protein_wat_boxcoord[1]*protein_wat_boxcoord[2]
+        protein_wat_boxvol_L = protein_wat_boxvol * float(1/(10**10)**3) * float((10**2)**3/1) * float(1/10**3)
+        target_molarity = targetM #M
+        target_molarity_mmol = target_molarity*1000
+        target_ion_atoms__L = target_molarity_mmol * float(1/10**3) * float(6.022*10**23)
+        target_num_ions = int(protein_wat_boxvol_L * target_ion_atoms__L)
+        print(f'volume of box (Å^2): {protein_wat_boxvol}')
+        print(f'volume of box (L): {protein_wat_boxvol_L}')
+        print(f'target ionic concentration (mmol): {target_molarity_mmol}')
+        print(f'target number of ions (atoms/L): {target_ion_atoms__L}')
+        if context == 'uncharged':
+            print(f'target number of ions (atoms): {target_num_ions} Na, {target_num_ions} Cl')
+            numNa = target_num_ions
+            numCl = target_num_ions
+        if context == 'negative':
+            print(f'target number of ions (atoms): {target_num_ions+abs(charge)} Na, {target_num_ions} Cl')
+            numNa = target_num_ions+abs(charge)
+            numCl = target_num_ions
+        if context == 'positive':
+            print(f'target number of ions (atoms): {target_num_ions} Na, {target_num_ions+abs(charge)} Cl')
+            numNa = target_num_ions
+            numCl = target_num_ions+abs(charge)
+        if targetM==0.0:
+            #user has specified to add no additional ions, only counters
+            if context == 'uncharged':
+                numNa = 0
+                numCl = 0
+            elif context == 'negative':
+                numNa = 0+abs(charge)
+                numCl = 0
+            elif context == 'positive':
+                numNa = 0
+                numCl = 0+abs(charge)
+
+        #now tleap
+        with open('tleap4.in','w') as file:
+            l1 = f"source leaprc.{self.proFF}\n"
+            l2 = f"source leaprc.{self.watFF}\n"
+            l3 = f"protein = loadpdb {self.pdbFile}\n" 
+            l4 = f"solvatebox protein {boxstring} {padding}\n"
+            l5 = f'addIonsRand protein Na+ {numNa} Cl- {numCl}\n'
+            l6 = "saveamberparm protein protein_ion.prmtop protein_ion.rst7\n"
+            l7 = "quit"
+            file.writelines([l1, l2, l3, l4, l5, l6, l7])
             
-        opc3 offxml file needs to be downloaded from https://github.com/openforcefield/openff-forcefields/tree/main/openforcefields/offxml
-            and put into the /envs/openff/lib/python3.10/site-packages/openforcefields/offxml directory
+        os.system("tleap -f tleap4.in")
+        self.log.write('created prmtop of protein in solvent with ions successfully\n')
+        return
+
+    def createSolvatedComplex(self, padding=10):
         '''
-        #there will always be at least 2 forcefields in use (water+ligand, water+protein)
-        if len(listofForcefields) < 2:
-            self.log.write("Error: Not enough forcefields provided. Need at least 2\n")
-            self.log.write("Please provide offxml for water and protein/ligand\n")
-            return 1
-        if len(listofForcefields) < 3 and self.sysType=='P-L':
-            self.log.write("Error: Not enough forcefields provided. Need at least 3 for P-L system\n")
-            self.log.write("Please provide offxml for water, protein, and ligand\n")
-            return 1
-        if len(listofForcefields) < 3:
-            self.log.write(f"parameterizing system with {listofForcefields[0]}, {listofForcefields[1]}\n")
-            sage = ForceField(listofForcefields[0], listofForcefields[1])
-        else:
-            self.log.write(f"parameterizing system with {listofForcefields[0]}, {listofForcefields[1]}, {listofForcefields[2]}\n")
-            sage = ForceField(listofForcefields[0], listofForcefields[1], listofForcefields[2])
-        # interchange = sage.create_interchange(self.solvatedTop)
-        interchange = Interchange.from_smirnoff(force_field=sage, topology=self.solvatedTop)
-        interchange.to_prmtop("system.prmtop") ##problem with saving when P-L for some reason, nonetheless we should create these
-        interchange.to_inpcrd("system.rst7")
-        self.omm_system = interchange.to_openmm()
-        self.omm_top = interchange.to_openmm_topology()
-        return 0
+        Method to generate protein+ligand in water prmtop and restart using the parameters generated for the ligand in the antechamberLigand method
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
+        '''
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
+        with open('tleap5.in','w') as file:
+            l1 = f"source leaprc.{self.proFF}\n"
+            l2 = f"source leaprc.{self.watFF}\n"
+            l3 = f'source leaprc.{self.ligFF}\n'
+            l4 = 'loadamberparams LIG.frcmod\n'
+            l5 = 'loadoff LIG.lib\n'
+            l6 = f"protein = loadpdb {self.pdbFile}\n" 
+            l7 = 'ligand = loadmol2 ligand.mol2\n'
+            l8 = 'complex = combine{protein ligand}\n'
+            l9 = f"solvatebox complex {boxstring} {padding}\n"
+            l10 = "saveamberparm complex complex_wat.prmtop complex_wat.rst7\n"
+            l11 = "quit"
+            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11])
+        os.system("tleap -f tleap5.in")
+        self.log.write('created prmtop of complex in solvent successfully\n')
+        return
+
+    def createIonsComplex(self, padding=10, targetM = 0.15):
+        '''
+        Method to generate a protein+ligand in water with counter ions (added to desired molarity), based on parameters generated in antechamberLigand method
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
+        targetM: target ion molarity (M), default 0.15, but if set to 0 will only add counter ions to neutralize charge of system
+        '''
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        ### first use leap.log from solvation of protein to determine system charge
+        charge = 0
+        with open('leap.log', 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                if 'The unperturbed charge of the unit' in line:
+                    print(line)
+                    splits = line.rsplit()
+                    charge = int(float(splits[6][1:-1]))
+                    print(int(float(splits[6][1:-1])))
+        if charge == 0:
+            context = 'uncharged'
+        elif charge < 0:
+            context = 'negative'
+        elif charge > 0:
+            context = 'positive'
+        with open('complex_wat.rst7', 'r') as f:
+            last_line = f.readlines()[-1]
+        raw = last_line.rsplit()
+        protein_wat_boxcoord = []
+        for i in range(3):
+            protein_wat_boxcoord.append(float(raw[i]))
+        print(f'coordinates of box: {protein_wat_boxcoord}')
+        protein_wat_boxvol = protein_wat_boxcoord[0]*protein_wat_boxcoord[1]*protein_wat_boxcoord[2]
+        protein_wat_boxvol_L = protein_wat_boxvol * float(1/(10**10)**3) * float((10**2)**3/1) * float(1/10**3)
+        target_molarity = 0.15 #M
+        target_molarity_mmol = target_molarity*1000
+        target_ion_atoms__L = target_molarity_mmol * float(1/10**3) * float(6.022*10**23)
+        target_num_ions = int(protein_wat_boxvol_L * target_ion_atoms__L)
+        print(f'volume of box (Å^2): {protein_wat_boxvol}')
+        print(f'volume of box (L): {protein_wat_boxvol_L}')
+        print(f'target ionic concentration (mmol): {target_molarity_mmol}')
+        print(f'target number of ions (atoms/L): {target_ion_atoms__L}')
+        if context == 'uncharged':
+            print(f'target number of ions (atoms): {target_num_ions} Na, {target_num_ions} Cl')
+            numNa = target_num_ions
+            numCl = target_num_ions
+        if context == 'negative':
+            print(f'target number of ions (atoms): {target_num_ions+abs(charge)} Na, {target_num_ions} Cl')
+            numNa = target_num_ions+abs(charge)
+            numCl = target_num_ions
+        if context == 'positive':
+            print(f'target number of ions (atoms): {target_num_ions} Na, {target_num_ions+abs(charge)} Cl')
+            numNa = target_num_ions
+            numCl = target_num_ions+abs(charge)
+        if targetM==0.0:
+            #user has specified to add no additional ions, only counters
+            if context == 'uncharged':
+                numNa = 0
+                numCl = 0
+            elif context == 'negative':
+                numNa = 0+abs(charge)
+                numCl = 0
+            elif context == 'positive':
+                numNa = 0
+                numCl = 0+abs(charge)
+        #now leap
+        with open('tleap6.in','w') as file:
+            l1 = f"source leaprc.{self.proFF}\n"
+            l2 = f"source leaprc.{self.watFF}\n"
+            l3 = f'source leaprc.{self.ligFF}\n'
+            l4 = 'loadamberparams LIG.frcmod\n'
+            l5 = 'loadoff LIG.lib\n'
+            l6 = f"protein = loadpdb {self.pdbFile}\n" 
+            l7 = 'ligand = loadmol2 ligand.mol2\n'
+            l8 = 'complex = combine{protein ligand}\n'
+            l9 = f"solvatebox complex {boxstring} {padding}\n"
+            l10 = f'addIonsRand complex Na+ {numNa} Cl- {numCl}\n'
+            l11 = "saveamberparm complex complex_ion.prmtop complex_ion.rst7\n"
+            l12 = "quit"
+            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12])
+            
+        ret = os.system("tleap -f tleap6.in")
+        return
+
+    def createAmberOpenMM(self):
+        '''
+        Method to import prmtops generated by tleap into an openMM system as desired by the sysType description by the user
+            Be sure the initialization of simSystem is accurate to the desired simulation/analyses
+        '''
+        if self.sysType == 'P-L':
+            if self.ions == None: #No ions whatsoever
+                amber_structure=pmd.load_file("complex_wat.prmtop", "complex_wat.rst7")
+                self.prmtop = openmm.app.AmberPrmtopFile('complex_wat.prmtop')
+                self.inpcrd = openmm.app.AmberInpcrdFile('complex_wat.rst7')
+            else: #ions, whether counter or to a molarity
+                amber_structure=pmd.load_file("complex_ion.prmtop", "complex_ion.rst7")
+                self.prmtop = openmm.app.AmberPrmtopFile('complex_ion.prmtop')
+                self.inpcrd = openmm.app.AmberInpcrdFile('complex_ion.rst7')
+        elif self.sysType == 'Apo':
+            if self.ions == None: #No ions whatsoever
+                amber_structure=pmd.load_file("protein_wat.prmtop", "protein_wat.rst7")
+                self.prmtop = openmm.app.AmberPrmtopFile('protein_wat.prmtop')
+                self.inpcrd = openmm.app.AmberInpcrdFile('protein_wat.rst7')
+            else: #ions, whether counter or to a molarity
+                amber_structure=pmd.load_file("protein_ion.prmtop", "protein_ion.rst7")
+                self.prmtop = openmm.app.AmberPrmtopFile('protein_ion.prmtop')
+                self.inpcrd = openmm.app.AmberInpcrdFile('protein_ion.rst7')        
+        elif self.sysType == 'Lig':
+            amber_structure=pmd.load_file("ligand_wat.prmtop", "ligand_wat.rst7")
+            self.prmtop = openmm.app.AmberPrmtopFile('ligand_wat.prmtop')
+            self.inpcrd = openmm.app.AmberInpcrdFile('ligand_wat.rst7')
+
+        self.omm_system = amber_structure.createSystem(
+            nonbondedMethod=openmm.app.PME,
+            nonbondedCutoff=9.0 * openmm_unit.angstrom,
+            switchDistance=10.0 * openmm_unit.angstrom,
+            constaints=openmm.app.HBonds,
+            removeCMMotion=False
+        )
+        integrator = openmm.LangevinIntegrator(
+            300 * openmm_unit.kelvin,
+            1 / openmm_unit.picosecond,
+            0.002 * openmm_unit.picoseconds
+        )
+        simulation=openmm.app.Simulation(self.prmtop.topology, self.omm_system, integrator)
+        self.omm_top = simulation.topology
+        simulation.context.setPositions(self.inpcrd.positions)
+        if self.inpcrd.boxVectors is not None:
+            simulation.context.setPeriodicBoxVectors(*self.inpcrd.boxVectors)
+        openmm.app.PDBFile.writeFile(simulation.topology, self.inpcrd.positions, open('topology.pdb', 'w'))
+        # self.solvatedTop = Topology.from_pdb('topology.pdb', unique_molecules=[self.ligand])
+        return
+    
     
     def addRestraints(self, restraintwt = 100, atomList = None):
         '''
@@ -474,7 +657,9 @@ class simSystem():
             stepSize * openmm_unit.picoseconds
         )
         simulation = openmm.app.Simulation(self.omm_top, self.omm_system, integrator)
-        simulation.context.setPositions(self.solvatedTop.get_positions().to_openmm())
+        simulation.context.setPositions(self.inpcrd.positions)
+        if self.inpcrd.boxVectors is not None:
+            simulation.context.setPeriodicBoxVectors(*self.inpcrd.boxVectors)
         nc_reporter = pmd.openmm.NetCDFReporter("min.nc", 10)
         simulation.reporters.append(nc_reporter)
         simulation.minimizeEnergy(
@@ -667,20 +852,11 @@ class simSystem():
                                            integrator,platform,properties)
         simulation.context.setState(self.equilState)
         if self.restraintType == None:
-            simulation.system.getForce(4).setFrequency(0)
-        else:
             simulation.system.getForce(5).setFrequency(0)
-        nc_split = nc_reporter.rsplit('.')
-        if nc_split[-1] == 'dcd':
-            self.log.write(f'User specified DCD trajectory format: {nc_reporter}\n')
-            nc_reporter = openmm.app.DCDReporter(nc_reporter, simSaveFreq)
-        elif nc_split[-1] == 'nc':
-            self.log.write(f'User specified NetCDF trajectory format: {nc_reporter}\n')
-            nc_reporter = pmd.openmm.NetCDFReporter(nc_reporter, simSaveFreq)
         else:
-            self.log.write(f'User specified a trajectory file format that is not recognized! {nc_reporter}\n')
-            self.log.write('Please provide an output file with the correct extensions: either .nc or .dcd\n')
-            return 1
+            simulation.system.getForce(6).setFrequency(0)
+        #nc_reporter = pmd.openmm.NetCDFReporter(nc_reporter, simSaveFreq)
+        nc_reporter = openmm.app.DCDReporter(nc_reporter, simSaveFreq)
         simulation.reporters.append(openmm.app.StateDataReporter(state_reporter, saveFreq, step=True,
                                    potentialEnergy=True,kineticEnergy=True,totalEnergy=True,
                                    temperature=True,volume=True,density=True,

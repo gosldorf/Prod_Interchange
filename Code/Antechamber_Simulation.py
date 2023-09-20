@@ -855,8 +855,17 @@ class simSystem():
             simulation.system.getForce(5).setFrequency(0)
         else:
             simulation.system.getForce(6).setFrequency(0)
-        #nc_reporter = pmd.openmm.NetCDFReporter(nc_reporter, simSaveFreq)
-        nc_reporter = openmm.app.DCDReporter(nc_reporter, simSaveFreq)
+        nc_split = nc_reporter.rsplit('.')
+        if nc_split[-1] == 'dcd':
+            self.log.write(f'User specified DCD trajectory format: {nc_reporter}\n')
+            nc_reporter = openmm.app.DCDReporter(nc_reporter, simSaveFreq)
+        elif nc_split[-1] == 'nc':
+            self.log.write(f'User specified NetCDF trajectory format: {nc_reporter}\n')
+            nc_reporter = pmd.openmm.NetCDFReporter(nc_reporter, simSaveFreq)
+        else:
+            self.log.write(f'User specified a trajectory file format that is not recognized! {nc_reporter}\n')
+            self.log.write('Please provide an output file with the correct extensions: either .nc or .dcd\n')
+            return 1
         simulation.reporters.append(openmm.app.StateDataReporter(state_reporter, saveFreq, step=True,
                                    potentialEnergy=True,kineticEnergy=True,totalEnergy=True,
                                    temperature=True,volume=True,density=True,
