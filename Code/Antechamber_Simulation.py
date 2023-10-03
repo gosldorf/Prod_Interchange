@@ -370,8 +370,8 @@ class simSystem():
                 if 'The unperturbed charge of the unit' in line:
                     print(line)
                     splits = line.rsplit()
-                    charge = int(round(splits[6][1:-1]))
-                    print(int(round(splits[6][1:-1])))
+                    charge = int(round(float(splits[6][1:-1])))
+                    print(int(round(float(splits[6][1:-1]))))
         if charge == 0:
             context = 'uncharged'
         elif charge < 0:
@@ -476,8 +476,8 @@ class simSystem():
                 if 'The unperturbed charge of the unit' in line:
                     print(line)
                     splits = line.rsplit()
-                    charge = int(round(splits[6][1:-1]))
-                    print(int(round(splits[6][1:-1])))
+                    charge = int(round(float(splits[6][1:-1])))
+                    print(int(round(float(splits[6][1:-1]))))
         if charge == 0:
             context = 'uncharged'
         elif charge < 0:
