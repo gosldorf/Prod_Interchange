@@ -354,13 +354,14 @@ class simSystem():
         self.log.write('created protein in solvent prmtop successfully\n')
         return
 
-    def createIonsProtein(self, padding=10, targetM = 0.15):
+    def createIonsProtein(self, padding=10):
         '''
         Method to generate a standard protein in water with counter ions (added to desired molarity)
 
         padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
         targetM: target ion molarity (M), default 0.15, but if set to 0 will only add counter ions to neutralize charge of system 
         '''
+        targetM = self.ions
         boxstring = self.watFF[6:].upper() + 'BOX'
         ### first use leap.log from solvation of protein to determine system charge
         charge = 0
@@ -460,13 +461,14 @@ class simSystem():
         self.log.write('created prmtop of complex in solvent successfully\n')
         return
 
-    def createIonsComplex(self, padding=10, targetM = 0.15):
+    def createIonsComplex(self, padding=10):
         '''
         Method to generate a protein+ligand in water with counter ions (added to desired molarity), based on parameters generated in antechamberLigand method
 
         padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
         targetM: target ion molarity (M), default 0.15, but if set to 0 will only add counter ions to neutralize charge of system
         '''
+        targetM = self.ions
         boxstring = self.watFF[6:].upper() + 'BOX'
         ### first use leap.log from solvation of protein to determine system charge
         charge = 0
@@ -550,19 +552,23 @@ class simSystem():
         '''
         if self.sysType == 'P-L':
             if self.ions == None: #No ions whatsoever
+                self.log.write('defining openmm system as PL without ions/n')
                 amber_structure=pmd.load_file("complex_wat.prmtop", "complex_wat.rst7")
                 self.prmtop = openmm.app.AmberPrmtopFile('complex_wat.prmtop')
                 self.inpcrd = openmm.app.AmberInpcrdFile('complex_wat.rst7')
             else: #ions, whether counter or to a molarity
+                self.log.write('defining openmm system as PL with ions/n')
                 amber_structure=pmd.load_file("complex_ion.prmtop", "complex_ion.rst7")
                 self.prmtop = openmm.app.AmberPrmtopFile('complex_ion.prmtop')
                 self.inpcrd = openmm.app.AmberInpcrdFile('complex_ion.rst7')
         elif self.sysType == 'Apo':
             if self.ions == None: #No ions whatsoever
+                self.log.write('defining openmm system as Apo without ions/n')
                 amber_structure=pmd.load_file("protein_wat.prmtop", "protein_wat.rst7")
                 self.prmtop = openmm.app.AmberPrmtopFile('protein_wat.prmtop')
                 self.inpcrd = openmm.app.AmberInpcrdFile('protein_wat.rst7')
             else: #ions, whether counter or to a molarity
+                self.log.write('defining openmm system as Apo with ions/n')
                 amber_structure=pmd.load_file("protein_ion.prmtop", "protein_ion.rst7")
                 self.prmtop = openmm.app.AmberPrmtopFile('protein_ion.prmtop')
                 self.inpcrd = openmm.app.AmberInpcrdFile('protein_ion.rst7')        
