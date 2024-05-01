@@ -1,0 +1,18 @@
+from Antechamber_Simulation import simSystem
+
+sys_pdb = '6wgx_prepared.pdb'
+lig_pdb = 'ligand_prepared.pdb'
+lig_sdf = 'ligand.sdf'
+
+system = simSystem(pdbFile=sys_pdb, sysType='P-L', ligFile=lig_pdb, sdfFile= lig_sdf, restraintType=None)
+system.antechamberLigand()
+system.createSolvatedLigand()
+system.createSolvatedProtein()
+system.createIonsProtein()
+system.createSolvatedComplex()
+system.createIonsComplex()
+system.createAmberOpenMM()
+system.minimizeSystem()
+system.heatSystem()
+system.equilSystem()
+system.prodSimulation(mdsteps=250000000, simSaveFreq=2500)
