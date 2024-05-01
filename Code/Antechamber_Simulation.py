@@ -476,7 +476,7 @@ class simSystem():
             l6 = f"protein = loadpdb {self.pdbFile}\n" 
             l7 = 'ligand = loadmol2 ligand.mol2\n'
             l8 = 'complex = combine{protein ligand}\n'
-            l10 = "saveamberparm complex complex_wat.prmtop complex_wat.rst7\n"
+            l10 = "saveamberparm complex complex_vac.prmtop complex_vac.rst7\n"
             l11 = "quit"
             file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l10, l11])
         os.system("tleap -f tleap5.in")
