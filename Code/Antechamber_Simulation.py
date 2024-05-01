@@ -461,13 +461,11 @@ class simSystem():
         self.log.write('created prmtop of complex in solvent successfully\n')
         return
 
-    def createVacuumComplex(self, padding=10):
+    def createVacuumComplex(self):
         '''
         Method to generate protein+ligand in vacuum prmtop and restart using the parameters generated for the ligand in the antechamberLigand method
-
-        padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger -- not sure if this needs to be edited for vacuum context
+        
         '''
-        boxstring = self.watFF[6:].upper() + 'BOX'
         os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
         with open('tleap5.in','w') as file:
             l1 = f"source leaprc.{self.proFF}\n"
