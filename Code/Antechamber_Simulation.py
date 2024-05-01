@@ -461,6 +461,30 @@ class simSystem():
         self.log.write('created prmtop of complex in solvent successfully\n')
         return
 
+    def createVacuumComplex(self, padding=10):
+        '''
+        Method to generate protein+ligand in vacuum prmtop and restart using the parameters generated for the ligand in the antechamberLigand method
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger -- not sure if this needs to be edited for vacuum context
+        '''
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
+        with open('tleap5.in','w') as file:
+            l1 = f"source leaprc.{self.proFF}\n"
+            l2 = f"source leaprc.{self.watFF}\n"
+            l3 = f'source leaprc.{self.ligFF}\n'
+            l4 = 'loadamberparams LIG.frcmod\n'
+            l5 = 'loadoff LIG.lib\n'
+            l6 = f"protein = loadpdb {self.pdbFile}\n" 
+            l7 = 'ligand = loadmol2 ligand.mol2\n'
+            l8 = 'complex = combine{protein ligand}\n'
+            l10 = "saveamberparm complex complex_wat.prmtop complex_wat.rst7\n"
+            l11 = "quit"
+            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l10, l11])
+        os.system("tleap -f tleap5.in")
+        self.log.write('created prmtop of complex in vacuum successfully\n')
+        return
+
     def createIonsComplex(self, padding=10):
         '''
         Method to generate a protein+ligand in water with counter ions (added to desired molarity), based on parameters generated in antechamberLigand method
