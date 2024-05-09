@@ -22,10 +22,10 @@ from openff.interchange import Interchange
 ########################Platform Block########################
 ##This section used by openmm to force accurate usage of CUDA
 # without you may not receive optimal gpu md speeds
-platform = openmm.Platform.getPlatformByName('CUDA')
-properties={}
-properties["DeviceIndex"]="0"
-properties["Precision"]="mixed"
+# platform = openmm.Platform.getPlatformByName('CUDA')
+# properties={}
+# properties["DeviceIndex"]="0"
+# properties["Precision"]="mixed"
 ########################Platform Block########################
 
 ########################Global Functions########################
@@ -180,7 +180,7 @@ class simSystem():
         self.sysType = sysType
         self.ligFile = ligFile
         self.sdfFile = sdfFile
-        self.ligand = Molecule.from_file(self.sdfFile)
+        # self.ligand = Molecule.from_file(self.sdfFile)
         self.proFF = proFF
         self.ligFF = ligFF
         self.watFF = watFF
@@ -476,9 +476,10 @@ class simSystem():
             l6 = f"protein = loadpdb {self.pdbFile}\n" 
             l7 = 'ligand = loadmol2 ligand.mol2\n'
             l8 = 'complex = combine{protein ligand}\n'
+            l9 = 'setbox complex centers 10\n'
             l10 = "saveamberparm complex complex_vac.prmtop complex_vac.rst7\n"
             l11 = "quit"
-            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l10, l11])
+            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11])
         os.system("tleap -f tleap5.in")
         self.log.write('created prmtop of complex in vacuum successfully\n')
         return
