@@ -1,4 +1,4 @@
-name: openff_interchange
+name: simulation
 channels:
   - conda-forge
   - anaconda
