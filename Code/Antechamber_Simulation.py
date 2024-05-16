@@ -311,6 +311,71 @@ class simSystem():
         os.system("tleap -f tleap1.in") #run tleap from our python script
         self.log.write('created ligand in vacuum prmtop successfully\n')
         return
+
+    def antechamberMultipleLigand(self, ligcharge=[0], additionalLigands=[]):
+        '''
+        Method parameterizes ligand using standard antechamber/sqm methodology outlined in Amber Tutorials
+        user specifies first ligand when initializing class, need additional ligands
+
+        ligcharge is a list here, for every ligand included we should tell the charge
+        additionalLigands is the list from which we store the extra ligands, this should be a filename
+
+        May add a boolean to handle duplicates of the same ligand differently, but for now we will simply treat all ligands the same
+            will need to create a mol2 I think anyhow, which is done in the antechamber step so there isn't much to skip
+            might be a better way to make the mol2
+        '''
+        letters = ['H','I','J','K','L','M','N','O','P','Q','R'] # this seems silly, but I recall there being issues with numbers in ligand resnames, so we're doing this instead...
+        if self.sysType == 'Apo':
+            self.log.write('Error: user selected to parameterize a ligand, but to run without a ligand\n')
+            self.log.write('Would recommend syncing the run context options\n')
+            return 1
+        if len(ligcharge) != len(additionalLigands)+1:
+            self.log.write('Error: user did not provide the same number of ligand charges as ligand files to parameterize\n')
+            self.log.write('Please double check the arguments in use\n')
+            return 1
+        os.system(f'antechamber -i {self.ligFile} -fi pdb -o ligand.mol2 -fo mol2 -c bcc -nc {ligcharge[0]} -rn LIG -at gaff2')
+        sqmpath = Path('sqm.pdb')
+        if not sqmpath.is_file():
+            self.log.write('sqm did not successfully calculate charges for ligand\n')
+            self.log.write('check logs and inputs\n')
+            return 1
+        os.system('rm -rf ANTE*') #remove temp files
+        os.system('rm -rf ATOMTYPE.INF')
+        os.system('parmchk2 -i ligand.mol2 -f mol2 -o LIG.frcmod -s gaff2 -a Y')
+        os.system('rm -rf sqm.pdb')
+        with open('tleap1.in','w') as file:
+            l1 = f"source leaprc.{self.ligFF}\n"
+            l2 = "loadamberparams LIG.frcmod\n" 
+            l3 = "ligand = loadmol2 ligand.mol2\n" 
+            l4 = "saveoff ligand LIG.lib\n"
+            l5 = "saveamberparm ligand ligand_vac.prmtop ligand_vac.rst7\n"
+            l6 = "quit"
+            file.writelines([l1, l2, l3, l4, l5, l6])
+        os.system("tleap -f tleap1.in") #run tleap from our python script
+        self.log.write('created ligand in vacuum prmtop successfully\n')
+        for k,ligFile in enumerate(additionalLigands):
+            os.system(f'antechamber -i {ligFile} -fi pdb -o ligand_{k+1}.mol2 -fo mol2 -c bcc -nc {ligcharge[k+1]} -rn LI{letters[k]} -at gaff2')
+            sqmpath = Path('sqm.pdb')
+            if not sqmpath.is_file():
+                self.log.write(f'sqm did not successfully calculate charges for ligand {k+1}\n')
+                self.log.write('check logs and inputs\n')
+                return 1
+            os.system('rm -rf ANTE*') #remove temp files
+            os.system('rm -rf ATOMTYPE.INF')
+            os.system(f'parmchk2 -i ligand_{k+1}.mol2 -f mol2 -o LI{letters[k]}.frcmod -s gaff2 -a Y')
+            os.system('rm -rf sqm.pdb')
+            os.system('rm -rf tleap1.in')
+            with open('tleap1.in','w') as file:
+                l1 = f"source leaprc.{self.ligFF}\n"
+                l2 = f"loadamberparams LI{letters[k]}.frcmod\n" 
+                l3 = f"ligand = loadmol2 ligand_{k+1}.mol2\n" 
+                l4 = f"saveoff ligand LI{letters[k]}.lib\n"
+                l5 = f"saveamberparm ligand ligand_{k+1}_vac.prmtop ligand_{k+1}_vac.rst7\n"
+                l6 = "quit"
+                file.writelines([l1, l2, l3, l4, l5, l6])
+            os.system("tleap -f tleap1.in") #run tleap from our python script
+            self.log.write('created ligand in vacuum prmtop successfully\n')
+        return
         
 
     def createSolvatedLigand(self, padding=20): ##padding in Å
@@ -461,7 +526,7 @@ class simSystem():
         self.log.write('created prmtop of complex in solvent successfully\n')
         return
 
-    def createVacuumComplex(self):
+    def createVacuumComplex(self, padding=10):
         '''
         Method to generate protein+ligand in vacuum prmtop and restart using the parameters generated for the ligand in the antechamberLigand method
         
@@ -476,12 +541,48 @@ class simSystem():
             l6 = f"protein = loadpdb {self.pdbFile}\n" 
             l7 = 'ligand = loadmol2 ligand.mol2\n'
             l8 = 'complex = combine{protein ligand}\n'
-            l9 = 'setbox complex centers 10\n'
+            l9 = f'setbox complex centers {padding}\n'
             l10 = "saveamberparm complex complex_vac.prmtop complex_vac.rst7\n"
             l11 = "quit"
             file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11])
         os.system("tleap -f tleap5.in")
         self.log.write('created prmtop of complex in vacuum successfully\n')
+        return
+
+    def createVacuumComplexMultiple(self, additionalLigands=[], padding=10):
+        '''
+        Method to generate protein+ligand in vacuum prmtop and restart using the parameters generated for the ligand in the antechamberLigand method
+
+        Altered to handle multiple ligands, here we provide frcmod
+
+        additionalLigands should be a list of the extra ligands to be included, probably best to use frcmods here
+        '''
+        ligstring = ['ligand']
+        os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
+        with open('tleap5.in','w') as file:
+            lines = []
+            lines.append(f"source leaprc.{self.proFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append(f'source leaprc.{self.ligFF}\n')
+            lines.append('loadamberparams LIG.frcmod\n')
+            lines.append('loadoff LIG.lib\n')
+            for k,lig in enumerate(additionalLigands):
+                lines.append(f'loadamberparams {lig}\n')
+                lines.append(f'loadoff {lig[:3]}.lib\n')
+            lines.append(f"protein = loadpdb {self.pdbFile}\n")
+            lines.append('ligand = loadmol2 ligand.mol2\n')
+            for k,lig in enumerate(additionalLigands):
+                lines.append(f'ligand_{k+1} = loadmol2 ligand_{k+1}.mol2\n')
+                ligstring.append(f'ligand_{k+1}')
+            tempstring = ' '.join(ligstring)
+            tempstring2 = 'complex = combine{protein ' + tempstring + '}\n'
+            lines.append(tempstring2)
+            lines.append(f'setbox complex centers {padding}\n')
+            lines.append("saveamberparm complex complex_vac.prmtop complex_vac.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
+        os.system("tleap -f tleap5.in")
+        self.log.write('created prmtop of complex in vacuum successfully with multiple ligands\n')
         return
 
     def createIonsComplex(self, padding=10):
