@@ -533,6 +533,7 @@ class simSystem():
         '''
         os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
         with open('tleap5.in','w') as file:
+            l0 = 'set default nocenter on\n'
             l1 = f"source leaprc.{self.proFF}\n"
             l2 = f"source leaprc.{self.watFF}\n"
             l3 = f'source leaprc.{self.ligFF}\n'
@@ -544,7 +545,7 @@ class simSystem():
             l9 = f'setbox complex centers {padding}\n'
             l10 = "saveamberparm complex complex_vac.prmtop complex_vac.rst7\n"
             l11 = "quit"
-            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11])
+            file.writelines([l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11])
         os.system("tleap -f tleap5.in")
         self.log.write('created prmtop of complex in vacuum successfully\n')
         return
