@@ -562,6 +562,7 @@ class simSystem():
         os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
         with open('tleap5.in','w') as file:
             lines = []
+            lines.append('set default nocenters on\n')
             lines.append(f"source leaprc.{self.proFF}\n")
             lines.append(f"source leaprc.{self.watFF}\n")
             lines.append(f'source leaprc.{self.ligFF}\n')
