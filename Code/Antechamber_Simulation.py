@@ -301,13 +301,15 @@ class simSystem():
         os.system('parmchk2 -i ligand.mol2 -f mol2 -o LIG.frcmod -s gaff2 -a Y')
         #write our tleap input file from our python script
         with open('tleap1.in','w') as file:
-            l1 = f"source leaprc.{self.ligFF}\n"
-            l2 = "loadamberparams LIG.frcmod\n" 
-            l3 = "ligand = loadmol2 ligand.mol2\n" 
-            l4 = "saveoff ligand LIG.lib\n"
-            l5 = "saveamberparm ligand ligand_vac.prmtop ligand_vac.rst7\n"
-            l6 = "quit"
-            file.writelines([l1, l2, l3, l4, l5, l6])
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.ligFF}\n")
+            lines.append("loadamberparams LIG.frcmod\n")
+            lines.append("ligand = loadmol2 ligand.mol2\n")
+            lines.append("saveoff ligand LIG.lib\n")
+            lines.append("saveamberparm ligand ligand_vac.prmtop ligand_vac.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
         os.system("tleap -f tleap1.in") #run tleap from our python script
         self.log.write('created ligand in vacuum prmtop successfully\n')
         return
@@ -366,13 +368,15 @@ class simSystem():
             os.system('rm -rf sqm.pdb')
             os.system('rm -rf tleap1.in')
             with open('tleap1.in','w') as file:
-                l1 = f"source leaprc.{self.ligFF}\n"
-                l2 = f"loadamberparams LI{letters[k]}.frcmod\n" 
-                l3 = f"ligand = loadmol2 ligand_{k+1}.mol2\n" 
-                l4 = f"saveoff ligand LI{letters[k]}.lib\n"
-                l5 = f"saveamberparm ligand ligand_{k+1}_vac.prmtop ligand_{k+1}_vac.rst7\n"
-                l6 = "quit"
-                file.writelines([l1, l2, l3, l4, l5, l6])
+                lines = []
+                lines.append('set default nocenters on\n')
+                lines.append(f"source leaprc.{self.ligFF}\n")
+                lines.append(f"loadamberparams LI{letters[k]}.frcmod\n")
+                lines.append(f"ligand = loadmol2 ligand_{k+1}.mol2\n")
+                lines.append(f"saveoff ligand LI{letters[k]}.lib\n")
+                lines.append(f"saveamberparm ligand ligand_{k+1}_vac.prmtop ligand_{k+1}_vac.rst7\n")
+                lines.append("quit")
+                file.writelines(lines)
             os.system("tleap -f tleap1.in") #run tleap from our python script
             self.log.write('created ligand in vacuum prmtop successfully\n')
         return
@@ -386,17 +390,19 @@ class simSystem():
         '''
         boxstring = self.watFF[6:].upper() + 'BOX'
         with open('tleap2.in','w') as file:
-            l1 = f"source leaprc.{self.ligFF}\n"
-            l2 = f"source leaprc.{self.watFF}\n"
-            l3 = "loadamberparams LIG.frcmod\n" 
-            l4 = "loadoff LIG.lib\n"
-            l5 = "ligand = loadmol2 ligand.mol2\n"
-            l6 = f"solvatebox ligand {boxstring} {padding}\n"
-            l7 = "saveamberparm ligand ligand_wat.prmtop ligand_wat.rst7\n"
-            l8 = "quit"
-            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8])
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.ligFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append("loadamberparams LIG.frcmod\n")
+            lines.append("loadoff LIG.lib\n")
+            lines.append("ligand = loadmol2 ligand.mol2\n")
+            lines.append(f"solvatebox ligand {boxstring} {padding}\n")
+            lines.append("saveamberparm ligand ligand_wat.prmtop ligand_wat.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
         os.system('tleap -f tleap2.in')
-        self.log.write('created ligand in solvent prmtop successfully\n')
+        self.log.write(f'created ligand in solvent: {self.watFF} prmtop successfully\n')
         return
 
     def createSolvatedProtein(self, padding=10): ##padding in Å
@@ -408,15 +414,17 @@ class simSystem():
         boxstring = self.watFF[6:].upper() + 'BOX'
         os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
         with open('tleap3.in','w') as file:
-            l1 = f"source leaprc.{self.proFF}\n"
-            l2 = f"source leaprc.{self.watFF}\n"
-            l3 = f"protein = loadpdb {self.pdbFile}\n" ##needed since we include xtal waters
-            l4 = f"solvatebox protein {boxstring} {padding}\n"
-            l5 = "saveamberparm protein protein_wat.prmtop protein_wat.rst7\n"
-            l6 = "quit"
-            file.writelines([l1, l2, l3, l4, l5, l6])
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.proFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append(f"protein = loadpdb {self.pdbFile}\n") ##needed since we include xtal waters
+            lines.append(f"solvatebox protein {boxstring} {padding}\n")
+            lines.append("saveamberparm protein protein_wat.prmtop protein_wat.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
         os.system("tleap -f tleap3.in") #run tleap from our python script
-        self.log.write('created protein in solvent prmtop successfully\n')
+        self.log.write(f'created protein in solvent: {self.watFF} prmtop successfully\n')
         return
 
     def createIonsProtein(self, padding=10):
@@ -488,17 +496,19 @@ class simSystem():
 
         #now tleap
         with open('tleap4.in','w') as file:
-            l1 = f"source leaprc.{self.proFF}\n"
-            l2 = f"source leaprc.{self.watFF}\n"
-            l3 = f"protein = loadpdb {self.pdbFile}\n" 
-            l4 = f"solvatebox protein {boxstring} {padding}\n"
-            l5 = f'addIonsRand protein Na+ {numNa} Cl- {numCl}\n'
-            l6 = "saveamberparm protein protein_ion.prmtop protein_ion.rst7\n"
-            l7 = "quit"
-            file.writelines([l1, l2, l3, l4, l5, l6, l7])
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.proFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append(f"protein = loadpdb {self.pdbFile}\n")
+            lines.append(f"solvatebox protein {boxstring} {padding}\n")
+            lines.append(f'addIonsRand protein Na+ {numNa} Cl- {numCl}\n')
+            lines.append("saveamberparm protein protein_ion.prmtop protein_ion.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
             
         os.system("tleap -f tleap4.in")
-        self.log.write('created prmtop of protein in solvent with ions successfully\n')
+        self.log.write(f'created prmtop of protein in solvent: {self.watFF} with ions: {numNa} Na+ and {numCl} Cl- successfully\n')
         return
 
     def createSolvatedComplex(self, padding=10):
@@ -510,20 +520,22 @@ class simSystem():
         boxstring = self.watFF[6:].upper() + 'BOX'
         os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
         with open('tleap5.in','w') as file:
-            l1 = f"source leaprc.{self.proFF}\n"
-            l2 = f"source leaprc.{self.watFF}\n"
-            l3 = f'source leaprc.{self.ligFF}\n'
-            l4 = 'loadamberparams LIG.frcmod\n'
-            l5 = 'loadoff LIG.lib\n'
-            l6 = f"protein = loadpdb {self.pdbFile}\n" 
-            l7 = 'ligand = loadmol2 ligand.mol2\n'
-            l8 = 'complex = combine{protein ligand}\n'
-            l9 = f"solvatebox complex {boxstring} {padding}\n"
-            l10 = "saveamberparm complex complex_wat.prmtop complex_wat.rst7\n"
-            l11 = "quit"
-            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11])
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.proFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append(f'source leaprc.{self.ligFF}\n')
+            lines.append('loadamberparams LIG.frcmod\n')
+            lines.append('loadoff LIG.lib\n')
+            lines.append(f"protein = loadpdb {self.pdbFile}\n")
+            lines.append('ligand = loadmol2 ligand.mol2\n')
+            lines.append('complex = combine{protein ligand}\n')
+            lines.append(f"solvatebox complex {boxstring} {padding}\n")
+            lines.append("saveamberparm complex complex_wat.prmtop complex_wat.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
         os.system("tleap -f tleap5.in")
-        self.log.write('created prmtop of complex in solvent successfully\n')
+        self.log.write(f'created prmtop of complex in solvent: {self.watFF} successfully\n')
         return
 
     def createVacuumComplex(self, padding=10):
@@ -533,19 +545,20 @@ class simSystem():
         '''
         os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
         with open('tleap5.in','w') as file:
-            l0 = 'set default nocenter on\n'
-            l1 = f"source leaprc.{self.proFF}\n"
-            l2 = f"source leaprc.{self.watFF}\n"
-            l3 = f'source leaprc.{self.ligFF}\n'
-            l4 = 'loadamberparams LIG.frcmod\n'
-            l5 = 'loadoff LIG.lib\n'
-            l6 = f"protein = loadpdb {self.pdbFile}\n" 
-            l7 = 'ligand = loadmol2 ligand.mol2\n'
-            l8 = 'complex = combine{protein ligand}\n'
-            l9 = f'setbox complex centers {padding}\n'
-            l10 = "saveamberparm complex complex_vac.prmtop complex_vac.rst7\n"
-            l11 = "quit"
-            file.writelines([l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11])
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.proFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append(f'source leaprc.{self.ligFF}\n')
+            lines.append('loadamberparams LIG.frcmod\n')
+            lines.append('loadoff LIG.lib\n')
+            lines.append(f"protein = loadpdb {self.pdbFile}\n")
+            lines.append('ligand = loadmol2 ligand.mol2\n')
+            lines.append('complex = combine{protein ligand}\n')
+            lines.append(f'setbox complex centers {padding}\n')
+            lines.append("saveamberparm complex complex_vac.prmtop complex_vac.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
         os.system("tleap -f tleap5.in")
         self.log.write('created prmtop of complex in vacuum successfully\n')
         return
@@ -654,21 +667,24 @@ class simSystem():
                 numCl = 0+abs(charge)
         #now leap
         with open('tleap6.in','w') as file:
-            l1 = f"source leaprc.{self.proFF}\n"
-            l2 = f"source leaprc.{self.watFF}\n"
-            l3 = f'source leaprc.{self.ligFF}\n'
-            l4 = 'loadamberparams LIG.frcmod\n'
-            l5 = 'loadoff LIG.lib\n'
-            l6 = f"protein = loadpdb {self.pdbFile}\n" 
-            l7 = 'ligand = loadmol2 ligand.mol2\n'
-            l8 = 'complex = combine{protein ligand}\n'
-            l9 = f"solvatebox complex {boxstring} {padding}\n"
-            l10 = f'addIonsRand complex Na+ {numNa} Cl- {numCl}\n'
-            l11 = "saveamberparm complex complex_ion.prmtop complex_ion.rst7\n"
-            l12 = "quit"
-            file.writelines([l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12])
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.proFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append(f'source leaprc.{self.ligFF}\n')
+            lines.append('loadamberparams LIG.frcmod\n')
+            lines.append('loadoff LIG.lib\n')
+            lines.append(f"protein = loadpdb {self.pdbFile}\n")
+            lines.append('ligand = loadmol2 ligand.mol2\n')
+            lines.append('complex = combine{protein ligand}\n')
+            lines.append(f"solvatebox complex {boxstring} {padding}\n")
+            lines.append(f'addIonsRand complex Na+ {numNa} Cl- {numCl}\n')
+            lines.append("saveamberparm complex complex_ion.prmtop complex_ion.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
             
         ret = os.system("tleap -f tleap6.in")
+        self.log.write(f'created prmtop of complex in solvent: {self.watFF} with ions: {numNa} Na+, {numCl} Cl- successfully\n')
         return
 
     def createAmberOpenMM(self):
