@@ -405,6 +405,41 @@ class simSystem():
         self.log.write(f'created ligand in solvent: {self.watFF} prmtop successfully\n')
         return
 
+    def createSolvatedLigandMultiple(self, additionalLigands=[], padding=20): ##padding in Å
+        '''
+        Method to use parameters generated in antechamberLigand to generate a solvated prmtop of the ligand
+
+        additionalLigand: list of additional ligands to include, should be list of frcmods
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 20 Å because ligands are small, 15 is good too.
+        '''
+        ligstring = ['ligand']
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        with open('tleap2.in','w') as file:
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.ligFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append("loadamberparams LIG.frcmod\n")
+            lines.append("loadoff LIG.lib\n")
+            for k,lig in enumerate(additionalLigands):
+                lines.append(f'loadamberparams {lig}\n')
+                lines.append(f'loadoff {lig[:3]}.lib\n')
+            lines.append("ligand = loadmol2 ligand.mol2\n")
+            for k,lig in enumerate(additionalLigands):
+                lines.append(f'ligand_{k+1} = loadmol2 ligand_{k+1}.mol2\n')
+                ligstring.append(f'ligand_{k+1}')
+            tempstring = ' '.join(ligstring)
+            tempstring2 = 'complex = combine{tempstring}\n' ##naming the object containing the multiple ligands 'complex' to match template code
+            lines.append(tempstring2)
+            lines.append(f"solvatebox complex {boxstring} {padding}\n")
+            lines.append("saveamberparm complex ligand_wat.prmtop ligand_wat.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
+        os.system('tleap -f tleap2.in')
+        self.log.write(f'created ligand in solvent: {self.watFF} prmtop successfully with multiple ligands\n')
+        return
+
     def createSolvatedProtein(self, padding=10): ##padding in Å
         '''
         Method to generate a standard protein in water prmtop with tleap using the provided protein file
@@ -430,6 +465,8 @@ class simSystem():
     def createIonsProtein(self, padding=10):
         '''
         Method to generate a standard protein in water with counter ions (added to desired molarity)
+
+        Relies on creating the SolvatedProtein system previously so that there is the unperturbed charge of the unit from the leap.log
 
         padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
         targetM: target ion molarity (M), default 0.15, but if set to 0 will only add counter ions to neutralize charge of system 
@@ -538,6 +575,43 @@ class simSystem():
         self.log.write(f'created prmtop of complex in solvent: {self.watFF} successfully\n')
         return
 
+    def createSolvatedComplexMultiple(self, additionalLigands=[], padding=10):
+        '''
+        Method to generate protein+ligand in water prmtop and restart using the parameters generated for the ligand in the antechamberLigand method
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
+        additionalLigands: list of additional ligands to add, list of frcmod files
+        '''
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        ligstring = ['ligand']
+        os.system('rm -rf leap.log') #clean leap log so we can search info about these steps more easily afterwards
+        with open('tleap5.in','w') as file:
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.proFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append(f'source leaprc.{self.ligFF}\n')
+            lines.append('loadamberparams LIG.frcmod\n')
+            lines.append('loadoff LIG.lib\n')
+            for k,lig in enumerate(additionalLigands):
+                lines.append(f'loadamberparams {lig}\n')
+                lines.append(f'loadoff {lig[:3]}.lib\n')
+            lines.append(f"protein = loadpdb {self.pdbFile}\n")
+            lines.append('ligand = loadmol2 ligand.mol2\n')
+            for k,lig in enumerate(additionalLigands):
+                lines.append(f'ligand_{k+1} = loadmol2 ligand_{k+1}.mol2\n')
+                ligstring.append(f'ligand_{k+1}')
+            tempstring = ' '.join(ligstring)
+            tempstring2 = 'complex = combine{protein ' + tempstring + '}\n'
+            lines.append(tempstring2)
+            lines.append(f"solvatebox complex {boxstring} {padding}\n")
+            lines.append("saveamberparm complex complex_wat.prmtop complex_wat.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
+        os.system("tleap -f tleap5.in")
+        self.log.write(f'created prmtop of complex in solvent: {self.watFF} with multiple ligands successfully\n')
+        return
+
     def createVacuumComplex(self, padding=10):
         '''
         Method to generate protein+ligand in vacuum prmtop and restart using the parameters generated for the ligand in the antechamberLigand method
@@ -603,6 +677,8 @@ class simSystem():
     def createIonsComplex(self, padding=10):
         '''
         Method to generate a protein+ligand in water with counter ions (added to desired molarity), based on parameters generated in antechamberLigand method
+
+        Relies on creating the SolvatedProtein system previously so that there is the unperturbed charge of the unit from the leap.log
 
         padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
         targetM: target ion molarity (M), default 0.15, but if set to 0 will only add counter ions to neutralize charge of system
@@ -685,6 +761,105 @@ class simSystem():
             
         ret = os.system("tleap -f tleap6.in")
         self.log.write(f'created prmtop of complex in solvent: {self.watFF} with ions: {numNa} Na+, {numCl} Cl- successfully\n')
+        return
+
+    def createIonsComplexMultiple(self, additionalLigands=[], padding=10):
+        '''
+        Method to generate a protein+ligand in water with counter ions (added to desired molarity), based on parameters generated in antechamberLigand method
+
+        Relies on creating the SolvatedProtein system previously so that there is the unperturbed charge of the unit from the leap.log
+
+        padding: extents of box padding to be fed to tleap solvateBox command, default here is 10 Å, wouldn't go too much larger
+        additionalLigands: list of extra ligands to be included, frcmods
+        targetM: target ion molarity (M), default 0.15, but if set to 0 will only add counter ions to neutralize charge of system
+        '''
+        ligstring = ['ligand']
+        targetM = self.ions
+        boxstring = self.watFF[6:].upper() + 'BOX'
+        ### first use leap.log from solvation of protein to determine system charge
+        charge = 0
+        with open('leap.log', 'r') as f:
+            lines = f.readlines()
+            for line in lines:
+                if 'The unperturbed charge of the unit' in line:
+                    print(line)
+                    splits = line.rsplit()
+                    charge = int(round(float(splits[6][1:-1])))
+                    print(int(round(float(splits[6][1:-1]))))
+        if charge == 0:
+            context = 'uncharged'
+        elif charge < 0:
+            context = 'negative'
+        elif charge > 0:
+            context = 'positive'
+        with open('complex_wat.rst7', 'r') as f:
+            last_line = f.readlines()[-1]
+        raw = last_line.rsplit()
+        protein_wat_boxcoord = []
+        for i in range(3):
+            protein_wat_boxcoord.append(float(raw[i]))
+        print(f'coordinates of box: {protein_wat_boxcoord}')
+        protein_wat_boxvol = protein_wat_boxcoord[0]*protein_wat_boxcoord[1]*protein_wat_boxcoord[2]
+        protein_wat_boxvol_L = protein_wat_boxvol * float(1/(10**10)**3) * float((10**2)**3/1) * float(1/10**3)
+        target_molarity = 0.15 #M
+        target_molarity_mmol = target_molarity*1000
+        target_ion_atoms__L = target_molarity_mmol * float(1/10**3) * float(6.022*10**23)
+        target_num_ions = int(protein_wat_boxvol_L * target_ion_atoms__L)
+        print(f'volume of box (Å^2): {protein_wat_boxvol}')
+        print(f'volume of box (L): {protein_wat_boxvol_L}')
+        print(f'target ionic concentration (mmol): {target_molarity_mmol}')
+        print(f'target number of ions (atoms/L): {target_ion_atoms__L}')
+        if context == 'uncharged':
+            print(f'target number of ions (atoms): {target_num_ions} Na, {target_num_ions} Cl')
+            numNa = target_num_ions
+            numCl = target_num_ions
+        if context == 'negative':
+            print(f'target number of ions (atoms): {target_num_ions+abs(charge)} Na, {target_num_ions} Cl')
+            numNa = target_num_ions+abs(charge)
+            numCl = target_num_ions
+        if context == 'positive':
+            print(f'target number of ions (atoms): {target_num_ions} Na, {target_num_ions+abs(charge)} Cl')
+            numNa = target_num_ions
+            numCl = target_num_ions+abs(charge)
+        if targetM==0.0:
+            #user has specified to add no additional ions, only counters
+            if context == 'uncharged':
+                numNa = 0
+                numCl = 0
+            elif context == 'negative':
+                numNa = 0+abs(charge)
+                numCl = 0
+            elif context == 'positive':
+                numNa = 0
+                numCl = 0+abs(charge)
+        #now leap
+        with open('tleap6.in','w') as file:
+            lines = []
+            lines.append('set default nocenters on\n')
+            lines.append(f"source leaprc.{self.proFF}\n")
+            lines.append(f"source leaprc.{self.watFF}\n")
+            lines.append(f'source leaprc.{self.ligFF}\n')
+            lines.append('loadamberparams LIG.frcmod\n')
+            lines.append('loadoff LIG.lib\n')
+            for k,lig in enumerate(additionalLigands):
+                lines.append(f'loadamberparams {lig}\n')
+                lines.append(f'loadoff {lig[:3]}.lib\n')
+            lines.append(f"protein = loadpdb {self.pdbFile}\n")
+            lines.append('ligand = loadmol2 ligand.mol2\n')
+            for k,lig in enumerate(additionalLigands):
+                lines.append(f'ligand_{k+1} = loadmol2 ligand_{k+1}.mol2\n')
+                ligstring.append(f'ligand_{k+1}')
+            tempstring = ' '.join(ligstring)
+            tempstring2 = 'complex = combine{protein ' + tempstring + '}\n'
+            lines.append(tempstring2)
+            lines.append(f"solvatebox complex {boxstring} {padding}\n")
+            lines.append(f'addIonsRand complex Na+ {numNa} Cl- {numCl}\n')
+            lines.append("saveamberparm complex complex_ion.prmtop complex_ion.rst7\n")
+            lines.append("quit")
+            file.writelines(lines)
+            
+        ret = os.system("tleap -f tleap6.in")
+        self.log.write(f'created prmtop of complex in solvent: {self.watFF} with ions: {numNa} Na+, {numCl} Cl- with multiple ligands successfully\n')
         return
 
     def createAmberOpenMM(self):
